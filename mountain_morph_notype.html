@@ -12,7 +12,23 @@
 <svg viewBox="0 0 1200 675" xmlns="http://www.w3.org/2000/svg">
   <rect width="1200" height="675" fill="#2e2c28"/>
   <polygon id="mtn" fill="#f0ede6" points=""/>
-  <g id="label"></g>
+
+  <g id="label" opacity="0">
+    <text id="mname" font-family="Georgia,'Times New Roman',serif" font-size="18" letter-spacing="4" fill="#f0ede6" text-anchor="middle" x="480" y="645"></text>
+    <text id="melev" font-family="Georgia,'Times New Roman',serif" font-size="16" fill="#888880" text-anchor="middle" x="480" y="663"></text>
+  </g>
+
+  <!-- RULER (right 20%: x 960–1200) -->
+  <line x1="968" y1="45" x2="968" y2="620" stroke="rgba(240,237,230,0.18)" stroke-width="0.5"/>
+  <text x="977" y="42" font-family="Georgia,'Times New Roman',serif" font-size="9" letter-spacing="1" fill="rgba(136,136,128,0.45)">ft</text>
+  <text x="977" y="105" font-family="Georgia,'Times New Roman',serif" font-size="10" letter-spacing="1" fill="rgba(136,136,128,0.7)">5,000</text>
+  <text x="977" y="207.5" font-family="Georgia,'Times New Roman',serif" font-size="10" letter-spacing="1" fill="rgba(136,136,128,0.7)">4,000</text>
+  <text x="977" y="310.5" font-family="Georgia,'Times New Roman',serif" font-size="10" letter-spacing="1" fill="rgba(136,136,128,0.7)">3,000</text>
+  <text x="977" y="413" font-family="Georgia,'Times New Roman',serif" font-size="10" letter-spacing="1" fill="rgba(136,136,128,0.7)">2,000</text>
+  <text x="977" y="515.8" font-family="Georgia,'Times New Roman',serif" font-size="10" letter-spacing="1" fill="rgba(136,136,128,0.7)">1,000</text>
+
+  <line id="peak-line" x1="0" y1="300" x2="0" y2="300" stroke="none"/>
+  <line id="ruler-tick" x1="0" y1="300" x2="0" y2="300" stroke="none"/>
 </svg>
 
 <script>
@@ -199,12 +215,29 @@ const BLOCKS = [
   [545,700],[635,700],
   [635,615],[635,90],[940,90],[1040,615]
 ];
+const BLOCKS_SCALED = BLOCKS.map(([x,y]) => [x*0.8, y]);
 
-const HOLD = 900;
-const MORPH = 1600;
-const TEXT_FADE_IN = 400;
-const TEXT_FADE_OUT = 300;
-const TEXT_DELAY = 200;
+const BASE_Y = 615;
+const PX_PER_FT = 565 / 5500;
+
+function parseElev(s) { return parseInt(s.replace(/\D/g, '')); }
+function elevToY(ft) { return BASE_Y - ft * PX_PER_FT; }
+
+function scalePts(pts, elevStr) {
+  const elev = parseElev(elevStr);
+  const targetY = elevToY(elev);
+  const apexY = Math.min(...pts.map(p => p[1]));
+  return pts.map(([x, y]) => {
+    const sy = y >= BASE_Y ? BASE_Y : BASE_Y - (BASE_Y - y) * (BASE_Y - targetY) / (BASE_Y - apexY);
+    return [x * 0.8, sy];
+  });
+}
+
+const HOLD = 576;
+const MORPH = 1024;
+const TEXT_FADE_IN = 256;
+const TEXT_FADE_OUT = 192;
+const TEXT_DELAY = 128;
 
 function ease(t) { return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2, 3)/2; }
 function lerp(a, b, t) { return a + (b - a) * t; }
@@ -215,83 +248,74 @@ const poly = document.getElementById('mtn');
 const nameEl = document.getElementById('mname');
 const elevEl = document.getElementById('melev');
 const labelEl = document.getElementById('label');
+const peakLine = document.getElementById('peak-line');
+const rulerTick = document.getElementById('ruler-tick');
 
 labelEl.setAttribute('opacity', '0');
-poly.setAttribute('points', ptsStr(BLOCKS));
+peakLine.setAttribute('opacity', '0');
+rulerTick.setAttribute('opacity', '0');
+poly.setAttribute('points', ptsStr(BLOCKS_SCALED));
 
-function run(fromPts, fromIdx) {
-  // fromIdx: -1 = blocks intro, 0..43 = peaks index
-  const toIdx = fromIdx === -1 ? 0 : (fromIdx + 1) % peaks.length;
-  const toPts = peaks[toIdx].pts;
-  const holdTime = fromIdx === -1 ? 1200 : HOLD;
-
-  setTimeout(function() {
-    const t0 = performance.now();
-    let morphDone = false;
-    let textAnimId = null;
-    let textDelayTimer = null;
-    let nextTimer = null;
-
-    // Capture current label opacity for fade-out
-    const startOpacity = fromIdx >= 0 ? 1 : 0;
-
-    function frame(now) {
-      const elapsed = now - t0;
-      const rawT = Math.min(elapsed / MORPH, 1);
-      const e = ease(rawT);
-      poly.setAttribute('points', ptsStr(lerpPts(fromPts, toPts, e)));
-
-      // Fade out old label during first TEXT_FADE_OUT ms of morph
-      if (fromIdx >= 0) {
-        const fadeOutT = Math.min(elapsed / TEXT_FADE_OUT, 1);
-        labelEl.setAttribute('opacity', String(startOpacity * (1 - fadeOutT)));
-      }
-
-      if (rawT >= 1 && !morphDone) {
-        morphDone = true;
-        poly.setAttribute('points', ptsStr(toPts));
-        labelEl.setAttribute('opacity', '0');
-        nameEl.textContent = peaks[toIdx].name;
-        elevEl.textContent = peaks[toIdx].elev;
-
-        // Delay then fade in new text
-        textDelayTimer = setTimeout(function() {
-          const fadeInStart = performance.now();
-          function fadeIn(now2) {
-            const dt = now2 - fadeInStart;
-            const ft = Math.min(dt / TEXT_FADE_IN, 1);
-            labelEl.setAttribute('opacity', String(ft));
-            if (ft < 1) {
-              textAnimId = requestAnimationFrame(fadeIn);
-            } else {
-              textAnimId = null;
-            }
-          }
-          textAnimId = requestAnimationFrame(fadeIn);
-        }, TEXT_DELAY);
-
-        // Schedule next morph after hold
-        nextTimer = setTimeout(function() {
-          if (textAnimId !== null) {
-            cancelAnimationFrame(textAnimId);
-            textAnimId = null;
-          }
-          run(toPts, toIdx);
-        }, HOLD);
-
-        return; // stop calling frame
-      }
-
-      if (rawT < 1) {
-        requestAnimationFrame(frame);
-      }
-    }
-
-    requestAnimationFrame(frame);
-  }, holdTime);
+function setRuler(elevStr, opacity) {
+  const y = elevToY(parseElev(elevStr)).toFixed(1);
+  peakLine.setAttribute('y1', y);
+  peakLine.setAttribute('y2', y);
+  peakLine.setAttribute('opacity', String(opacity));
+  rulerTick.setAttribute('y1', y);
+  rulerTick.setAttribute('y2', y);
+  rulerTick.setAttribute('opacity', String(opacity));
 }
 
-run(BLOCKS, -1);
+function startRun(fromPts, fromIdx, toPts, toIdx, holdTime) {
+  let runStart = null;
+  let textSet = false;
+
+  function loop(now) {
+    if (runStart === null) runStart = now;
+    const elapsed = now - runStart;
+    const morphElapsed = elapsed - holdTime;
+    const rawT = morphElapsed < 0 ? 0 : Math.min(morphElapsed / MORPH, 1);
+
+    poly.setAttribute('points', ptsStr(lerpPts(fromPts, toPts, ease(rawT))));
+
+    if (fromIdx >= 0 && morphElapsed >= 0) {
+      const op = Math.max(0, 1 - morphElapsed / TEXT_FADE_OUT);
+      labelEl.setAttribute('opacity', String(op));
+      setRuler(peaks[fromIdx].elev, op);
+    }
+
+    if (rawT < 1) { requestAnimationFrame(loop); return; }
+
+    poly.setAttribute('points', ptsStr(toPts));
+    const postMorph = morphElapsed - MORPH;
+
+    if (!textSet) {
+      textSet = true;
+      nameEl.textContent = peaks[toIdx].name;
+      elevEl.textContent = peaks[toIdx].elev;
+      labelEl.setAttribute('opacity', '0');
+      setRuler(peaks[toIdx].elev, 0);
+    }
+
+    const fadeInElapsed = postMorph - TEXT_DELAY;
+    if (fadeInElapsed >= 0) {
+      const ft = Math.min(fadeInElapsed / TEXT_FADE_IN, 1);
+      labelEl.setAttribute('opacity', String(ft));
+      setRuler(peaks[toIdx].elev, ft);
+    }
+
+    if (postMorph < TEXT_DELAY + TEXT_FADE_IN + HOLD) {
+      requestAnimationFrame(loop);
+    } else {
+      const nextIdx = (toIdx + 1) % peaks.length;
+      startRun(toPts, toIdx, scalePts(peaks[nextIdx].pts, peaks[nextIdx].elev), nextIdx, HOLD);
+    }
+  }
+
+  requestAnimationFrame(loop);
+}
+
+startRun(BLOCKS_SCALED, -1, scalePts(peaks[0].pts, peaks[0].elev), 0, 1200);
 </script>
 </body>
 </html>

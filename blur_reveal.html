@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Blur Reveal</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #111;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: system-ui, sans-serif;
+  }
+  #container { position: relative; cursor: none; user-select: none; }
+  canvas { display: block; max-width: 90vw; max-height: 90vh; }
+  #hint {
+    color: rgba(255,255,255,0.45);
+    font-size: 13px;
+    margin-top: 14px;
+    letter-spacing: 0.04em;
+    transition: opacity 1s;
+  }
+  #hint.hidden { opacity: 0; }
+</style>
+</head>
+<body>
+<div id="container">
+  <canvas id="c"></canvas>
+</div>
+<p id="hint">Move your cursor (or finger) over the image to reveal</p>
+
+<script>
+const BRUSH_RADIUS = 180;
+const BRUSH_SOFTNESS = 0.82;
+
+const canvas = document.getElementById('c');
+const mainCtx = canvas.getContext('2d');
+const hint = document.getElementById('hint');
+
+let W, H;
+let blurredImg = new Image();
+let cleanImg   = new Image();
+let loadedCount = 0;
+
+// Offscreen canvas for the clean image (permanent, drawn once)
+let cleanCanvas;
+// Offscreen canvas for the reveal mask (accumulates brush strokes)
+let maskCanvas, maskCtx;
+
+function init() {
+  W = blurredImg.naturalWidth;
+  H = blurredImg.naturalHeight;
+  canvas.width  = W;
+  canvas.height = H;
+
+  const scale = Math.min(window.innerWidth * 0.9 / W, window.innerHeight * 0.9 / H, 1);
+  canvas.style.width  = (W * scale) + 'px';
+  canvas.style.height = (H * scale) + 'px';
+
+  // Pre-render clean image to an offscreen canvas
+  cleanCanvas = document.createElement('canvas');
+  cleanCanvas.width = W; cleanCanvas.height = H;
+  cleanCanvas.getContext('2d').drawImage(cleanImg, 0, 0, W, H);
+
+  // Reveal mask starts fully transparent — destination-in clips by alpha
+  maskCanvas = document.createElement('canvas');
+  maskCanvas.width = W; maskCanvas.height = H;
+  maskCtx = maskCanvas.getContext('2d');
+  // leave it transparent (default)
+
+  draw();
+}
+
+function draw() {
+  // 1. Draw blurred base
+  mainCtx.drawImage(blurredImg, 0, 0, W, H);
+
+  // 2. Draw clean image, masked by the reveal shape
+  //    We composite: cleanImage * maskAlpha on top of blurred
+  //    Use a temporary canvas to avoid polluting mainCtx state
+  const tmp = document.createElement('canvas');
+  tmp.width = W; tmp.height = H;
+  const tCtx = tmp.getContext('2d');
+
+  // Draw clean image
+  tCtx.drawImage(cleanCanvas, 0, 0);
+
+  // Clip to revealed mask: destination-in = keep where mask is white
+  tCtx.globalCompositeOperation = 'destination-in';
+  tCtx.drawImage(maskCanvas, 0, 0);
+
+  // Composite the masked clean image onto the main canvas
+  mainCtx.drawImage(tmp, 0, 0);
+}
+
+window.reveal = function(cx, cy) {
+  const r = BRUSH_RADIUS;
+  const grad = maskCtx.createRadialGradient(cx, cy, 0, cx, cy, r);
+  grad.addColorStop(0,    'rgba(255,255,255,1)');
+  grad.addColorStop(0.18, 'rgba(255,255,255,0.95)');
+  grad.addColorStop(0.5,  'rgba(255,255,255,0.6)');
+  grad.addColorStop(0.75, 'rgba(255,255,255,0.25)');
+  grad.addColorStop(1,    'rgba(255,255,255,0)');
+
+  maskCtx.globalCompositeOperation = 'source-over';
+  maskCtx.fillStyle = grad;
+  maskCtx.beginPath();
+  maskCtx.arc(cx, cy, r, 0, Math.PI * 2);
+  maskCtx.fill();
+
+  draw();
+};
+
+function toImageCoords(e) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = W / rect.width;
+  const scaleY = H / rect.height;
+  const src = e.touches ? e.touches[0] : e;
+  return {
+    x: (src.clientX - rect.left) * scaleX,
+    y: (src.clientY - rect.top)  * scaleY
+  };
+}
+
+// Target cursor position (raw, immediate)
+let targetPos = null;
+// Spring brush position (lags behind with damping)
+let brushPos  = null;
+let rafId = null;
+
+// Spring constants — lower ease = slower, dreamier
+const EASE = 0.028;   // how quickly the brush chases the cursor (0..1)
+const STOP_THRESHOLD = 0.3; // px — stop animating when close enough
+
+function animateBrush() {
+  if (!targetPos || !brushPos) { rafId = null; return; }
+
+  const dx = targetPos.x - brushPos.x;
+  const dy = targetPos.y - brushPos.y;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+
+  if (dist < STOP_THRESHOLD) {
+    reveal(targetPos.x, targetPos.y);
+    rafId = null;
+    return;
+  }
+
+  brushPos.x += dx * EASE;
+  brushPos.y += dy * EASE;
+
+  reveal(brushPos.x, brushPos.y);
+  rafId = requestAnimationFrame(animateBrush);
+}
+
+function handleMove(e) {
+  e.preventDefault();
+  if (loadedCount < 2) return;
+  if (!hint.classList.contains('hidden')) hint.classList.add('hidden');
+
+  const pos = toImageCoords(e);
+  targetPos = pos;
+
+  // Snap brush to cursor on first touch so there's no initial jump
+  if (!brushPos) brushPos = { x: pos.x, y: pos.y };
+
+  if (!rafId) rafId = requestAnimationFrame(animateBrush);
+}
+
+function handleEnd() {
+  // Let the brush finish drifting to the last point, then stop
+  targetPos = brushPos ? { ...brushPos } : null;
+}
+
+canvas.addEventListener('mousemove',  handleMove, { passive: false });
+canvas.addEventListener('touchmove',  handleMove, { passive: false });
+canvas.addEventListener('mouseleave', handleEnd);
+canvas.addEventListener('touchend',   handleEnd);
+
+// Custom cursor ring
+const dot = document.createElement('div');
+Object.assign(dot.style, {
+  position: 'fixed',
+  width: '24px', height: '24px',
+  borderRadius: '50%',
+  border: '2px solid rgba(255,255,255,0.75)',
+  pointerEvents: 'none',
+  transform: 'translate(-50%,-50%)',
+  zIndex: 9999,
+  display: 'none',
+});
+document.body.appendChild(dot);
+canvas.addEventListener('mouseenter', () => dot.style.display = 'block');
+canvas.addEventListener('mouseleave', () => dot.style.display = 'none');
+document.addEventListener('mousemove', e => {
+  dot.style.left = e.clientX + 'px';
+  dot.style.top  = e.clientY + 'px';
+});
+
+// Load images
+function onLoad() {
+  loadedCount++;
+  if (loadedCount === 2) init();
+}
+blurredImg.onload = onLoad;
+cleanImg.onload   = onLoad;
+const params = new URLSearchParams(location.search);
+blurredImg.src = params.get('blur')  || 'blurred.png';
+cleanImg.src   = params.get('clean') || 'clean.png';
+</script>
+</body>
+</html>

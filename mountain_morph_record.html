@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: #111; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 16px; }
+  canvas { max-width: 100%; border: 1px solid #333; }
+  #status { color: #f0ede6; font-family: Georgia, serif; font-size: 13px; letter-spacing: 3px; opacity: 0.7; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1200" height="675"></canvas>
+<div id="status">RENDERING...</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const statusEl = document.getElementById('status');
+
+const BASE_Y = 615;
+const PX_PER_FT = 565 / 5500;
+function parseElev(s) { return parseInt(s.replace(/\D/g, '')); }
+function elevToY(ft) { return BASE_Y - ft * PX_PER_FT; }
+
+function scalePts(pts, elevStr) {
+  const elev = parseElev(elevStr);
+  const targetY = elevToY(elev);
+  const apexY = Math.min(...pts.map(p => p[1]));
+  return pts.map(([x, y]) => {
+    const sy = y >= BASE_Y ? BASE_Y : BASE_Y - (BASE_Y - y) * (BASE_Y - targetY) / (BASE_Y - apexY);
+    return [x * 0.8, sy];
+  });
+}
+
+const peaks = [
+  { name:"MARCY", elev:"5,344'", pts:[[160,615],[220,580],[310,490],[420,330],[460,195],[530,265],[600,100],[700,290],[800,430],[900,540],[970,585],[1040,615]]},
+  { name:"ALGONQUIN", elev:"5,114'", pts:[[160,615],[240,580],[310,445],[390,490],[510,110],[620,330],[750,225],[850,380],[930,490],[980,565],[1005,590],[1040,615]]},
+  { name:"HAYSTACK", elev:"4,960'", pts:[[160,615],[230,590],[330,530],[410,420],[480,295],[555,175],[625,90],[695,185],[775,330],[855,480],[955,575],[1040,615]]},
+  { name:"SKYLIGHT", elev:"4,926'", pts:[[160,615],[220,585],[300,540],[390,460],[470,355],[540,240],[595,135],[670,265],[770,410],[870,510],[965,580],[1040,615]]},
+  { name:"WHITEFACE", elev:"4,867'", pts:[[160,615],[230,600],[330,575],[430,510],[510,400],[570,290],[660,90],[780,330],[880,470],[950,560],[995,590],[1040,615]]},
+  { name:"DIX", elev:"4,857'", pts:[[160,615],[225,590],[305,530],[370,330],[435,185],[500,315],[570,220],[640,305],[730,225],[830,410],[960,570],[1040,615]]},
+  { name:"GRAY", elev:"4,840'", pts:[[160,615],[215,590],[295,545],[385,465],[470,355],[545,235],[600,140],[690,295],[790,430],[890,525],[975,575],[1040,615]]},
+  { name:"IROQUOIS", elev:"4,840'", pts:[[160,615],[220,590],[310,555],[395,460],[455,295],[525,255],[595,135],[700,285],[810,440],[920,540],[978,578],[1040,615]]},
+  { name:"BASIN", elev:"4,827'", pts:[[160,615],[215,590],[285,545],[375,470],[460,370],[535,250],[605,155],[685,290],[785,420],[875,510],[970,570],[1040,615]]},
+  { name:"GOTHICS", elev:"4,736'", pts:[[160,615],[215,590],[295,535],[375,215],[460,355],[545,245],[630,355],[715,205],[805,405],[905,510],[980,580],[1040,615]]},
+  { name:"COLDEN", elev:"4,714'", pts:[[160,615],[225,590],[315,535],[405,390],[455,225],[535,340],[625,165],[740,320],[820,450],[925,545],[985,580],[1040,615]]},
+  { name:"GIANT", elev:"4,627'", pts:[[160,615],[215,590],[290,555],[380,475],[460,365],[545,235],[625,160],[710,315],[815,445],[900,520],[970,575],[1040,615]]},
+  { name:"NIPPLETOP", elev:"4,620'", pts:[[160,615],[215,590],[300,550],[390,480],[470,370],[540,255],[605,155],[685,295],[780,420],[875,510],[965,570],[1040,615]]},
+  { name:"SANTANONI", elev:"4,607'", pts:[[160,615],[215,590],[295,545],[380,465],[460,355],[540,230],[605,170],[685,300],[785,430],[885,520],[975,575],[1040,615]]},
+  { name:"REDFIELD", elev:"4,606'", pts:[[160,615],[215,590],[300,545],[390,465],[465,360],[535,240],[600,160],[680,270],[775,400],[875,510],[975,570],[1040,615]]},
+  { name:"WRIGHT", elev:"4,580'", pts:[[160,615],[220,590],[310,550],[400,470],[475,355],[545,235],[615,170],[700,295],[790,405],[885,490],[970,570],[1040,615]]},
+  { name:"SADDLEBACK", elev:"4,515'", pts:[[160,615],[215,590],[305,535],[370,355],[415,225],[505,450],[565,455],[640,465],[730,200],[845,425],[960,565],[1040,615]]},
+  { name:"PANTHER", elev:"4,442'", pts:[[160,615],[215,590],[305,550],[400,475],[475,365],[545,255],[605,185],[685,295],[785,430],[885,520],[975,575],[1040,615]]},
+  { name:"TABLETOP", elev:"4,427'", pts:[[160,615],[215,590],[305,550],[390,475],[460,375],[515,265],[575,200],[645,210],[740,305],[845,450],[960,570],[1040,615]]},
+  { name:"ROCKY PEAK", elev:"4,420'", pts:[[160,615],[220,590],[305,550],[395,475],[465,365],[495,225],[565,260],[635,205],[740,385],[865,510],[965,575],[1040,615]]},
+  { name:"MACOMB", elev:"4,405'", pts:[[160,615],[220,590],[305,545],[385,455],[450,270],[525,365],[605,205],[710,375],[815,460],[905,540],[970,575],[1040,615]]},
+  { name:"ARMSTRONG", elev:"4,400'", pts:[[160,615],[220,590],[315,550],[420,460],[510,325],[575,210],[645,130],[740,295],[835,430],[925,530],[975,575],[1040,615]]},
+  { name:"HOUGH", elev:"4,400'", pts:[[160,615],[215,590],[295,545],[385,465],[465,360],[535,245],[600,165],[685,285],[775,400],[875,505],[970,570],[1040,615]]},
+  { name:"SEWARD", elev:"4,361'", pts:[[160,615],[215,590],[295,545],[380,460],[460,350],[535,240],[595,170],[665,280],[765,400],[870,510],[972,575],[1040,615]]},
+  { name:"MARSHALL", elev:"4,360'", pts:[[160,615],[215,590],[295,545],[380,465],[460,360],[535,240],[600,175],[675,295],[775,420],[875,515],[975,575],[1040,615]]},
+  { name:"ALLEN", elev:"4,340'", pts:[[160,615],[215,590],[290,560],[370,485],[455,385],[545,260],[615,185],[700,290],[800,425],[895,520],[975,575],[1040,615]]},
+  { name:"BIG SLIDE", elev:"4,240'", pts:[[160,615],[225,590],[315,535],[430,395],[500,275],[540,195],[595,180],[655,265],[745,385],[860,490],[975,565],[1040,615]]},
+  { name:"UPPER WOLF JAW", elev:"4,185'", pts:[[160,615],[220,590],[305,545],[380,325],[445,255],[515,295],[585,200],[655,285],[745,240],[855,455],[960,565],[1040,615]]},
+  { name:"LOWER WOLF JAW", elev:"4,175'", pts:[[160,615],[220,590],[300,550],[375,335],[445,260],[515,305],[595,205],[675,285],[765,255],[875,465],[965,570],[1040,615]]},
+  { name:"STREET", elev:"4,166'", pts:[[160,615],[220,590],[320,550],[415,470],[500,365],[565,255],[625,200],[710,325],[820,455],[925,545],[980,580],[1040,615]]},
+  { name:"PHELPS", elev:"4,161'", pts:[[160,615],[220,590],[310,550],[400,475],[480,365],[545,255],[605,195],[685,300],[785,435],[885,530],[975,575],[1040,615]]},
+  { name:"DONALDSON", elev:"4,140'", pts:[[160,615],[220,590],[305,545],[395,460],[465,280],[545,370],[625,210],[730,375],[820,455],[905,530],[970,570],[1040,615]]},
+  { name:"SEYMOUR", elev:"4,120'", pts:[[160,615],[215,590],[300,550],[385,475],[465,370],[535,260],[595,200],[665,295],[765,425],[875,515],[975,575],[1040,615]]},
+  { name:"SAWTEETH", elev:"4,100'", pts:[[160,615],[225,590],[315,535],[385,405],[445,330],[510,370],[570,260],[640,300],[715,205],[825,395],[960,560],[1040,615]]},
+  { name:"CASCADE", elev:"4,098'", pts:[[160,615],[220,590],[320,550],[425,465],[520,365],[590,260],[655,195],[750,325],[855,455],[940,540],[985,570],[1040,615]]},
+  { name:"SOUTH DIX", elev:"4,060'", pts:[[160,615],[225,590],[315,550],[405,470],[495,330],[555,205],[625,250],[685,225],[775,405],[885,520],[970,570],[1040,615]]},
+  { name:"PORTER", elev:"4,059'", pts:[[160,615],[220,590],[310,550],[400,475],[478,370],[548,260],[605,200],[678,300],[775,430],[875,525],[975,575],[1040,615]]},
+  { name:"COLVIN", elev:"4,057'", pts:[[160,615],[225,590],[315,550],[400,470],[480,360],[535,225],[585,260],[645,205],[740,385],[855,510],[970,575],[1040,615]]},
+  { name:"EMMONS", elev:"4,040'", pts:[[160,615],[215,590],[295,545],[380,465],[460,360],[540,250],[605,195],[685,290],[780,420],[880,510],[972,575],[1040,615]]},
+  { name:"DIAL", elev:"4,020'", pts:[[160,615],[215,590],[295,545],[380,465],[460,355],[540,250],[605,200],[690,310],[785,435],[880,515],[970,575],[1040,615]]},
+  { name:"EAST DIX", elev:"4,012'", pts:[[160,615],[220,590],[310,550],[400,470],[485,360],[548,245],[605,200],[675,305],[775,430],[880,525],[975,575],[1040,615]]},
+  { name:"ESTHER", elev:"4,012'", pts:[[160,615],[215,590],[300,550],[385,470],[460,365],[530,250],[598,190],[680,290],[780,420],[880,515],[975,575],[1040,615]]},
+  { name:"BLAKE", elev:"3,960'", pts:[[160,615],[220,590],[305,550],[392,470],[475,365],[540,255],[600,200],[673,295],[775,420],[875,515],[975,575],[1040,615]]},
+  { name:"CLIFF", elev:"3,960'", pts:[[160,615],[230,590],[290,210],[365,225],[510,255],[580,205],[680,215],[790,355],[875,480],[945,555],[1000,585],[1040,615]]},
+];
+
+const BLOCKS = [[160,615],[220,435],[155,345],[235,250],[370,45],[545,615],[545,700],[635,700],[635,615],[635,90],[940,90],[1040,615]];
+const BLOCKS_SCALED = BLOCKS.map(([x,y]) => [x*0.8, y]);
+
+const HOLD = 576, MORPH = 1024, TEXT_FADE_IN = 256, TEXT_FADE_OUT = 192, TEXT_DELAY = 128;
+const FIRST_HOLD = 1200;
+const RUN0_DUR = FIRST_HOLD + MORPH + TEXT_DELAY + TEXT_FADE_IN + HOLD;
+const RUN_DUR  = HOLD + MORPH + TEXT_DELAY + TEXT_FADE_IN + HOLD;
+const TOTAL_MS = RUN0_DUR + (peaks.length - 1) * RUN_DUR;
+const FPS = 30;
+const MS_PER_FRAME = 1000 / FPS;
+const TOTAL_FRAMES = Math.ceil(TOTAL_MS / MS_PER_FRAME);
+
+const scaledPts = peaks.map(p => scalePts(p.pts, p.elev));
+
+function ease(t) { return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2,3)/2; }
+function lerp(a, b, t) { return a + (b - a) * t; }
+function lerpPts(a, b, t) { return a.map((p,i) => [lerp(p[0],b[i][0],t), lerp(p[1],b[i][1],t)]); }
+
+function getState(t) {
+  let runIdx, runStart, holdTime, fromIdx;
+  if (t < RUN0_DUR) {
+    runIdx = 0; runStart = 0; holdTime = FIRST_HOLD; fromIdx = -1;
+  } else {
+    runIdx = 1 + Math.floor((t - RUN0_DUR) / RUN_DUR);
+    runIdx = Math.min(runIdx, peaks.length - 1);
+    runStart = RUN0_DUR + (runIdx - 1) * RUN_DUR;
+    holdTime = HOLD; fromIdx = runIdx - 1;
+  }
+  const toIdx   = runIdx;
+  const fromPts = fromIdx === -1 ? BLOCKS_SCALED : scaledPts[fromIdx];
+  const toPts   = scaledPts[toIdx];
+  const elapsed = t - runStart;
+  const morphElapsed = elapsed - holdTime;
+  const rawT = morphElapsed < 0 ? 0 : Math.min(morphElapsed / MORPH, 1);
+  const pts = lerpPts(fromPts, toPts, ease(rawT));
+
+  let labelOpacity = 0, labelName = '', labelElev = '', rulerOpacity = 0, rulerElev = null;
+  if (rawT < 1) {
+    if (fromIdx >= 0 && morphElapsed >= 0) {
+      const op = Math.max(0, 1 - morphElapsed / TEXT_FADE_OUT);
+      labelOpacity = op; rulerOpacity = op;
+      labelName = peaks[fromIdx].name; labelElev = peaks[fromIdx].elev; rulerElev = peaks[fromIdx].elev;
+    }
+  } else {
+    const postMorph = morphElapsed - MORPH;
+    const fadeInElapsed = postMorph - TEXT_DELAY;
+    const ft = fadeInElapsed < 0 ? 0 : Math.min(fadeInElapsed / TEXT_FADE_IN, 1);
+    labelOpacity = ft; rulerOpacity = ft;
+    labelName = peaks[toIdx].name; labelElev = peaks[toIdx].elev; rulerElev = peaks[toIdx].elev;
+  }
+  return { pts, labelOpacity, labelName, labelElev, rulerOpacity, rulerElev };
+}
+
+function drawState({ pts, labelOpacity, labelName, labelElev, rulerOpacity, rulerElev }) {
+  ctx.fillStyle = '#2e2c28';
+  ctx.fillRect(0, 0, 1200, 675);
+
+  ctx.fillStyle = '#f0ede6';
+  ctx.beginPath();
+  pts.forEach(([x,y],i) => i === 0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y));
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.strokeStyle = 'rgba(240,237,230,0.18)';
+  ctx.lineWidth = 0.5;
+  ctx.beginPath(); ctx.moveTo(968,45); ctx.lineTo(968,620); ctx.stroke();
+
+  ctx.strokeStyle = 'rgba(136,136,128,0.4)';
+  ctx.lineWidth = 0.5;
+  [101.4, 204.1, 306.8, 409.5, 512.3].forEach(y => {
+    ctx.beginPath(); ctx.moveTo(963,y); ctx.lineTo(968,y); ctx.stroke();
+  });
+
+  ctx.textAlign = 'left';
+  ctx.font = '9px Georgia,serif';
+  ctx.fillStyle = 'rgba(136,136,128,0.45)';
+  ctx.fillText('ft', 977, 42);
+  ctx.font = '10px Georgia,serif';
+  ctx.fillStyle = 'rgba(136,136,128,0.7)';
+  [['5,000',105],['4,000',207.5],['3,000',310.5],['2,000',413],['1,000',515.8]].forEach(([lbl,y]) => ctx.fillText(lbl,977,y));
+
+  if (rulerElev && rulerOpacity > 0) {
+    const ry = elevToY(parseElev(rulerElev));
+    ctx.globalAlpha = rulerOpacity * 0.8;
+    ctx.strokeStyle = '#f0ede6'; ctx.lineWidth = 0.5;
+    ctx.setLineDash([2,3]);
+    ctx.beginPath(); ctx.moveTo(840,ry); ctx.lineTo(968,ry); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#f0ede6';
+    ctx.beginPath(); ctx.arc(968,ry,2.5,0,Math.PI*2); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  if (labelOpacity > 0) {
+    ctx.globalAlpha = labelOpacity;
+    ctx.textAlign = 'center';
+    ctx.font = '18px Georgia,serif';
+    ctx.fillStyle = '#f0ede6';
+    if (ctx.letterSpacing !== undefined) ctx.letterSpacing = '4px';
+    ctx.fillText(labelName, 480, 645);
+    ctx.font = '16px Georgia,serif';
+    ctx.fillStyle = '#888880';
+    if (ctx.letterSpacing !== undefined) ctx.letterSpacing = '1px';
+    ctx.fillText(labelElev, 480, 663);
+    ctx.globalAlpha = 1;
+    if (ctx.letterSpacing !== undefined) ctx.letterSpacing = '0px';
+  }
+}
+
+// MediaRecorder — captureStream(0) = manual frame cadence
+const mimeType = MediaRecorder.isTypeSupported('video/mp4') ? 'video/mp4'
+               : MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9'
+               : 'video/webm';
+const ext = mimeType.startsWith('video/mp4') ? 'mp4' : 'webm';
+
+const stream = canvas.captureStream(0);
+const videoTrack = stream.getVideoTracks()[0];
+const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 8_000_000 });
+const chunks = [];
+recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+recorder.onstop = () => {
+  const blob = new Blob(chunks, { type: mimeType });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `adirondack-46-peaks.${ext}`;
+  document.body.appendChild(a);
+  a.click();
+  statusEl.textContent = `DONE — adirondack-46-peaks.${ext}`;
+};
+recorder.start(500);
+
+// MessageChannel pump — not throttled by tab visibility
+const { port1, port2 } = new MessageChannel();
+let frame = 0;
+
+port1.onmessage = () => {
+  if (frame > TOTAL_FRAMES) {
+    recorder.stop();
+    return;
+  }
+  const t = frame * MS_PER_FRAME;
+  drawState(getState(t));
+  videoTrack.requestFrame();
+  frame++;
+  if (frame % FPS === 0) {
+    const pct = Math.min(100, Math.round(frame / TOTAL_FRAMES * 100));
+    statusEl.textContent = `RENDERING ${pct}% — tab visibility doesn't matter`;
+  }
+  port2.postMessage(null);
+};
+
+port2.postMessage(null); // kick off
+</script>
+</body>
+</html>
